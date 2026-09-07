@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ꥩힱퟚ</title>
+    <style>
+        @font-face {
+            font-family: 'GalmuriMono7';
+            src: url('./assets/GalmuriMono7.woff2') format('woff2');
+            font-weight: normal; font-style: normal; font-display: swap;
+        }
+
+        body {
+            background-color: #111;
+            margin: 0; padding: 0; color: white;
+            font-family: 'GalmuriMono7', monospace; user-select: none;
+            overflow: hidden; /* 스크롤 방지 */
+            touch-action: none; /* 모바일 제스처 방지 */
+        }
+
+        #main-layout {
+            display: flex; justify-content: center; align-items: center;
+            width: 100vw; height: 100vh;
+            position: relative;
+        }
+
+        /* 화면 비율에 맞춰 스케일링을 담당하는 래퍼 */
+        #scale-wrapper {
+            width: 640px; height: 480px;
+            transform-origin: center center;
+        }
+
+        #game-container {
+            position: relative;
+            width: 640px; height: 480px;
+            overflow: hidden;
+            transition: transform 0.05s;
+        }
+
+        .dom-shake {
+            animation: dom-shake-anim 0.1s infinite;
+        }
+        
+        @keyframes dom-shake-anim {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            25% { transform: translate(10px, -5px) rotate(1deg); }
+            50% { transform: translate(-10px, 10px) rotate(-1deg); }
+            75% { transform: translate(5px, -10px) rotate(1deg); }
+            100% { transform: translate(0, 0) rotate(0deg); }
+        }
+
+        #game-container::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%);
+            background-size: 100% 4px;
+            box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.6);
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        canvas {
+            background-color: #000; 
+            border: none; 
+            image-rendering: pixelated; 
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.05); 
+            position: absolute; top: 0; left: 0;
+        }
+
+        #dialogue-box {
+            position: absolute;
+            top: 20px; left: 50%; transform: translateX(-50%); 
+            width: 580px; height: 140px;
+            background-color: #000; border: none; 
+            padding: 20px; box-sizing: border-box;
+            display: none; flex-direction: column; justify-content: flex-start;
+            z-index: 10;
+        }
+
+        #dialogue-text {
+            font-size: 24px; line-height: 1.5; white-space: pre-wrap;
+            color: #e0e0e0;
+            text-shadow: -2px 0px 0px rgba(255, 0, 0, 0.8), 
+                          2px 0px 0px rgba(0, 255, 255, 0.8);
+        }
+
+        .waiting::after {
+            content: '▼';
+            position: absolute; bottom: 15px; right: 20px;
+            font-size: 20px; color: #fff;
+            transform: scaleX(1.6); 
+            animation: hard-blink 0.8s step-end infinite;
+        }
+
+        @keyframes hard-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        #start-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex; justify-content: center; align-items: center;
+            font-size: 24px; z-index: 20; cursor: pointer;
+            text-shadow: -2px 0px 0px rgba(255, 0, 0, 0.8), 2px 0px 0px rgba(0, 255, 255, 0.8);
+        }
+
+        /* 모바일 가상 패드 UI */
+        #mobile-controls {
+            display: none; /* 기본은 숨김, JS에서 모바일 감지시 flex로 변경 */
+            position: fixed;
+            bottom: 30px; left: 0; width: 100%;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 0 30px; box-sizing: border-box;
+            z-index: 9999;
+            pointer-events: none; /* 컨테이너는 터치 무시, 버튼만 터치 가능하게 */
+        }
+
+        .dpad-container, .action-container { pointer-events: auto; }
+
+        .dpad-container {
+            display: flex; flex-direction: column; align-items: center; gap: 5px;
+        }
+        .dpad-row { display: flex; gap: 5px; }
+        .dpad-center { width: 55px; height: 55px; }
+        
+        .dpad-btn, .action-btn {
+            background: #000;
+            border: 4px solid #fff;
+            color: white; font-family: 'GalmuriMono7', monospace;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 24px; box-sizing: border-box;
+            outline: none; -webkit-tap-highlight-color: transparent;
+        }
+        .dpad-btn { width: 55px; height: 55px; }
+        .dpad-btn:active { background: #fff; color: #000; }
+
+        .action-container {
+            margin-bottom: 20px; margin-right: 10px;
+        }
+        .action-btn {
+            width: 80px; height: 80px;
+            font-size: 36px; font-weight: bold;
+        }
+        .action-btn:active { background: #fff; color: #000; }
+
+    </style>
+</head>
+<body>
+
+    <div id="main-layout">
+        <!-- 화면 리사이징을 위한 래퍼 -->
+        <div id="scale-wrapper">
+            <div id="game-container">
+                <canvas id="gameCanvas" width="640" height="480"></canvas>
+                <div id="start-overlay">[화면을 클릭하거나 Z키를 눌러 시작]</div>
+                <div id="dialogue-box"><div id="dialogue-text"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 모바일 가상 조이패드 -->
+    <div id="mobile-controls">
+        <div class="dpad-container">
+            <div class="dpad-row">
+                <button class="dpad-btn up" data-key="ArrowUp">▲</button>
+            </div>
+            <div class="dpad-row">
+                <button class="dpad-btn left" data-key="ArrowLeft">◀</button>
+                <div class="dpad-center"></div>
+                <button class="dpad-btn right" data-key="ArrowRight">▶</button>
+            </div>
+            <div class="dpad-row">
+                <button class="dpad-btn down" data-key="ArrowDown">▼</button>
+            </div>
+        </div>
+        <div class="action-container">
+            <button class="action-btn" data-key="z">Z</button>
+        </div>
+    </div>
+
+    <script>
+        
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
+
+        function resizeLayout() {
+            const wrapper = document.getElementById('scale-wrapper');
+            const w = window.innerWidth;
+            const padSpace = isMobile ? 180 : 0;
+            const h = window.innerHeight - padSpace;
+            
+            const scale = Math.min(w / 640, h / 480);
+            wrapper.style.transform = `scale(${scale})`;
+        }
+        window.addEventListener('resize', resizeLayout);
+        resizeLayout();
+
+        const scripts = {
+            intro: [
+                "* 크리스... 오... 크리스...",
+                "* 재미있니, 크리스?\n  금연을 하는 것 말야...",
+                "* 나도 알아, 크리스...\n  금연은 어렵지, 그렇지?...",
+                "* 그래서 찾아다니고 있는 거지?\n  금연하는 방법을...",
+                "* 그리고 연기처럼 태워버릴 수 있는\n  마지막 한 개비를!",
+                "* 이걸로 네가 바라는 걸 얻을 수 있다고\n  진심으로 믿는 거니...?",
+                "* ...아니지, 너의 일부분은 이걸...\n  그냥 즐기고 있는 거잖아?",
+                "* 오, 뭘 인상을 다 쓰고 그래.\n  난 어둠 속에서도 담뱃불로 다 볼 수 있거든!",
+                "* 하지만 말야...\n  너도 그럴 수 있을까?"
+            ],
+            death: [
+                "* 그거야! 바로 그 모습이\n  보고 싶었어!",
+                "* 붉은색으로 반짝이는 그 모습,\n  아름다운 담뱃불 같아...",
+                "* 타오르는 연기는 숨길 수 없어, 크리스.\n  깊게 들이마시지 않으면...",
+                "* 결국 폐 속에 맺힌 갈망도\n  사라지는 법이야.",
+                "* 하하... 뭐, 이제 됐어!\n  우리 둘 다 할 일이 있잖아?",
+                "* 이 금연방법7가지를 얻고 싶으면,\n  가져가라고...",
+                "* 닿을 수 있다면 말이지!"
+            ]
+        };
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        const dBox = document.getElementById('dialogue-box');
+        const dText = document.getElementById('dialogue-text');
+        const gameContainer = document.getElementById('game-container');
+
+        const audios = {
+            bgm: new Audio('./assets/bgm.mp3'),
+            eram: new Audio('./assets/eram.mp3'),
+            text: new Audio('./assets/snd_board_text_main.wav'),
+            textEnd: new Audio('./assets/snd_board_text_main_end.wav'),
+            laugh: new Audio('./assets/snd_board_mantle_laugh_mid.wav'),
+            bossHurt: new Audio('./assets/snd_board_mantle_dash_slow.wav'), 
+            playerHurt: new Audio('./assets/snd_board_mantle_unknown_a.wav'), 
+            throw: new Audio('./assets/snd_board_mantle_move.wav'), 
+            explode: new Audio('./assets/snd_board_mantle_unknown_b.wav'), 
+            dashPrep: new Audio('./assets/snd_board_mantle_dash_prepare.wav'),
+            dash: new Audio('./assets/snd_board_mantle_dash.wav'),
+            dashFast: new Audio('./assets/snd_board_mantle_dash_fast.wav'),
+            release: new Audio('./assets/snd_board_mantle_release.wav'),
+            gain: new Audio('./assets/gain.wav'),
+            swords: [new Audio('./assets/sword1.wav'), new Audio('./assets/sword2.wav'), new Audio('./assets/sword3.wav')]
+        };
+        audios.bgm.loop = true; audios.eram.loop = true;
+        audios.bgm.volume = 0.5; audios.eram.volume = 0.5;
+
+        function loadImage(src) { const img = new Image(); img.src = `./assets/${src}`; return img; }
+
+        const sprites = {
+            kris: {
+                walk: {
+                    down: [loadImage('spr_board_kris_walk_down_0.png'), loadImage('spr_board_kris_walk_down_1.png')],
+                    up:   [loadImage('spr_board_kris_walk_up_0.png'), loadImage('spr_board_kris_walk_up_1.png')],
+                    left: [loadImage('spr_board_kris_walk_left_0.png'), loadImage('spr_board_kris_walk_left_1.png')],
+                    right:[loadImage('spr_board_kris_walk_right_0.png'), loadImage('spr_board_kris_walk_right_1.png')]
+                },
+                strike: {
+                    down: [loadImage('spr_board_kris_strike_down_0.png'), loadImage('spr_board_kris_strike_down_1.png'), loadImage('spr_board_kris_strike_down_2.png')],
+                    up:   [loadImage('spr_board_kris_strike_up_0.png'), loadImage('spr_board_kris_strike_up_1.png'), loadImage('spr_board_kris_strike_up_2.png')],
+                    left: [loadImage('spr_board_kris_strike_left_0.png'), loadImage('spr_board_kris_strike_left_1.png'), loadImage('spr_board_kris_strike_left_2.png')],
+                    right:[loadImage('spr_board_kris_strike_right_0.png'), loadImage('spr_board_kris_strike_right_1.png'), loadImage('spr_board_kris_strike_right_2.png')]
+                }
+            },
+            boss: loadImage('BOSS.png'),
+            bomb: loadImage('bomb.png'),
+            dinner: loadImage('TV_Dinner_item_8bit.gif')
+        };
+
+        const obstacles = [
+            { x: 120, y: 140, w: 60, h: 60 },
+            { x: 460, y: 140, w: 60, h: 60 },
+            { x: 120, y: 320, w: 60, h: 60 },
+            { x: 460, y: 320, w: 60, h: 60 }
+        ];
+
+        let gameState = 'start'; 
+        let globalFrame = 0;
+        let dialogueLock = false; 
+        let currentScript = [];
+        let dialogueIdx = 0, isTyping = false, isWaiting = false, typeInterval, typedText = "";
+        let screenShake = 0; 
+        let particles = []; 
+
+        const player = { 
+            x: 320, y: 380, speed: 3.5, dir: 'up', 
+            state: 'idle', frame: 0, timer: 0, hasHit: false,
+            hp: 100, maxHp: 100, invincibility: 0 
+        };
+        
+        const boss = {
+            x: 320, y: 150, 
+            targetX: 320, targetY: 150, dashVx: 0, dashVy: 0,
+            baseScale: 0.25, scaleY: 1.0, skewX: 0, yOffset: 0, 
+            state: 'hidden', timer: 0, actionTimer: 0,
+            hp: 150, maxHp: 150, 
+            invincible: false 
+        };
+
+        let hpBar = { x: 55, y: 20, visible: true };
+        let hpBarStealTriggered = false; 
+        let hpShards = []; 
+
+        const healItem = { x: 0, y: 0, active: false, timer: 0 };
+        const item = { x: 0, y: 0, active: false };
+        let bombs = []; 
+
+        const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, z: false, Enter: false };
+
+        // === 키보드 이벤트 ===
+        window.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.key)) keys[e.key] = true;
+            if (e.code === 'KeyZ' || e.code === 'Enter' || e.key.toLowerCase() === 'z' || e.key === 'ㅋ' || e.key === 'Enter') { e.preventDefault(); handleAction(); }
+        });
+        window.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+        document.getElementById('start-overlay').addEventListener('click', handleAction);
+
+        // === 모바일 조이패드 이벤트 바인딩 ===
+        if (isMobile) {
+            document.getElementById('mobile-controls').style.display = 'flex';
+            
+            const bindTouch = (selector, keyBind) => {
+                const btn = document.querySelector(selector);
+                if(!btn) return;
+                
+                btn.addEventListener('touchstart', (e) => {
+                    e.preventDefault(); 
+                    keys[keyBind] = true;
+                    if (keyBind === 'z') handleAction();
+                });
+                btn.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    keys[keyBind] = false;
+                });
+                btn.addEventListener('touchcancel', (e) => {
+                    e.preventDefault();
+                    keys[keyBind] = false;
+                });
+            };
+
+            bindTouch('.dpad-btn.up', 'ArrowUp');
+            bindTouch('.dpad-btn.down', 'ArrowDown');
+            bindTouch('.dpad-btn.left', 'ArrowLeft');
+            bindTouch('.dpad-btn.right', 'ArrowRight');
+            bindTouch('.action-btn', 'z');
+        }
+
+        // 컨텍스트 메뉴(우클릭/길게누르기 팝업) 방지
+        document.addEventListener('contextmenu', e => e.preventDefault());
+
+
+        function playSound(snd, vol = 1.0) {
+            snd.currentTime = 0; snd.volume = vol; snd.play().catch(()=>{});
+        }
+
+        function triggerDomShake(durationMs) {
+            gameContainer.classList.add('dom-shake');
+            setTimeout(() => gameContainer.classList.remove('dom-shake'), durationMs);
+        }
+
+        function spawnParticles(x, y, color, count) {
+            for(let i=0; i<count; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 12,
+                    vy: (Math.random() - 0.5) * 12,
+                    life: 15 + Math.random() * 15,
+                    maxLife: 30,
+                    color: color
+                });
+            }
+        }
+
+        function checkCollisionWithWalls(x, y, type) {
+            let hitX, hitY, hitW, hitH;
+            if (type === 'player') { hitX = x - 15; hitY = y - 15; hitW = 30; hitH = 20; }
+            else if (type === 'boss') { hitX = x - 20; hitY = y - 20; hitW = 40; hitH = 40; }
+            
+            for (let obs of obstacles) {
+                if (hitX < obs.x + obs.w && hitX + hitW > obs.x &&
+                    hitY < obs.y + obs.h && hitY + hitH > obs.y) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function startDialogue(scriptArray) {
+            currentScript = scriptArray; dialogueIdx = 0;
+            dBox.style.display = 'flex'; 
+            dialogueLock = true;
+            setTimeout(() => dialogueLock = false, 500); 
+            typeWriter(currentScript[0]);
+        }
+
+        function typeWriter(text) {
+            isTyping = true; isWaiting = false; dBox.classList.remove('waiting'); dText.innerHTML = "";
+            let i = 0; typedText = text; clearInterval(typeInterval);
+            typeInterval = setInterval(() => {
+                if (i < text.length) {
+                    const char = text.charAt(i); dText.innerHTML += char;
+                    if (char.trim() !== '') { playSound(audios.text, 0.6); }
+                    i++;
+                } else finishTyping();
+            }, 35);
+        }
+
+        function finishTyping() {
+            clearInterval(typeInterval); dText.innerHTML = typedText;
+            isTyping = false; isWaiting = true; dBox.classList.add('waiting');
+            playSound(audios.textEnd, 0.8);
+        }
+
+        function handleAction() {
+            if (dialogueLock) return; 
+
+            if (gameState === 'start') {
+                gameState = 'dialogue_intro'; 
+                document.getElementById('start-overlay').style.display = 'none';
+                audios.eram.play().catch(()=>{}); 
+                startDialogue(scripts.intro);
+            } 
+            else if (gameState === 'gameover') {
+                resetGame(); 
+            }
+            else if (gameState === 'dialogue_intro' || gameState === 'dialogue_death') {
+                if (isTyping) { finishTyping(); }
+                else if (isWaiting) {
+                    dialogueIdx++;
+                    if (dialogueIdx < currentScript.length) {
+                        typeWriter(currentScript[dialogueIdx]);
+                    } else {
+                        dBox.style.display = 'none';
+                        if (gameState === 'dialogue_intro') {
+                            gameState = 'boss_intro'; boss.state = 'intro'; boss.timer = 0;
+                            audios.eram.pause(); 
+                            playSound(audios.laugh, 0.8);
+                        } else if (gameState === 'dialogue_death') {
+                            gameState = 'boss_fly'; boss.timer = 0;
+                            playSound(audios.release, 1.0);
+                        }
+                    }
+                }
+            } 
+            else if ((gameState === 'play' || gameState === 'item_wait') && player.state !== 'attack') {
+                player.state = 'attack'; player.frame = 0; player.timer = 0; player.hasHit = false;
+                playSound(audios.swords[Math.floor(Math.random() * audios.swords.length)], 0.5);
+
+                if (gameState === 'item_wait' && item.active) {
+                    const distToItem = Math.hypot(item.x - player.x, item.y - player.y);
+                    if (distToItem < 60) {
+                        item.active = false;
+                        gameState = 'item_got'; 
+                        audios.gain.volume = 1.0;
+                        audios.gain.play().catch(()=>{});
+                        audios.gain.onended = () => {
+                            window.open("https://www.guro.go.kr/health/contents.do?key=1376", "_blank");
+                            gameState = 'cleared'; 
+                        };
+                    }
+                }
+            }
+        }
+
+        function resetGame() {
+            player.hp = player.maxHp; player.x = 320; player.y = 380; player.dir = 'up'; player.invincibility = 0;
+            boss.hp = boss.maxHp; boss.x = 320; boss.y = 150; boss.state = 'move'; boss.invincible = false; boss.actionTimer = 0;
+            bombs = []; particles = []; screenShake = 0;
+            hpBar.visible = true; hpBarStealTriggered = false; hpShards = []; 
+            healItem.active = false; healItem.timer = 0;
+            gameState = 'play';
+            audios.bgm.currentTime = 0;
+            audios.bgm.play().catch(()=>{});
+        }
+
+        function checkHitBoss() {
+            if (player.hasHit || boss.invincible || gameState !== 'play') return;
+            
+            let hitX = player.x, hitY = player.y - 30; 
+            if (player.dir === 'up') hitY -= 40;
+            else if (player.dir === 'down') hitY += 30;
+            else if (player.dir === 'left') hitX -= 40;
+            else if (player.dir === 'right') hitX += 40;
+
+            let bx = boss.x, by = boss.y - (sprites.boss.height * boss.baseScale) / 2;
+            if (Math.hypot(bx - hitX, by - hitY) < 60) {
+                player.hasHit = true; 
+                screenShake = 8; 
+                spawnParticles(bx, by, '#fff', 10); 
+                playSound(audios.bossHurt, 1.0);
+
+                boss.hp -= 10;
+                
+                if (boss.hp <= 40 && !hpBarStealTriggered) {
+                    hpBarStealTriggered = true;
+                    boss.state = 'steal_prep'; 
+                    boss.timer = 0;
+                    boss.invincible = true; 
+                }
+                else if (boss.hp <= 0) {
+                    bombs = []; hpShards = []; gameState = 'dialogue_death'; boss.state = 'dead_stand';
+                    healItem.active = false; 
+                    
+                    audios.bgm.pause(); 
+                    audios.eram.currentTime = 0; audios.eram.play().catch(()=>{});
+                    startDialogue(scripts.death);
+                } 
+                else {
+                    boss.state = 'hurt'; boss.timer = 0;
+                    boss.invincible = true;
+                }
+            }
+        }
+
+        function damagePlayer(amt) {
+            if (player.invincibility > 0 || gameState !== 'play') return;
+            player.hp = Math.max(0, player.hp - amt);
+            player.invincibility = 60; 
+            
+            screenShake = 15; 
+            spawnParticles(player.x, player.y, '#f00', 15);
+            playSound(audios.playerHurt, 0.8);
+            
+            if (player.hp <= 0) { gameState = 'gameover'; audios.bgm.pause(); }
+        }
+
+        function spawnBomb() {
+            let tx, ty;
+            do {
+                tx = Math.max(30, Math.min(canvas.width - 30, player.x + (Math.random() * 120 - 60)));
+                ty = Math.max(50, Math.min(canvas.height - 30, player.y + (Math.random() * 120 - 60)));
+            } while(checkCollisionWithWalls(tx, ty, 'player'));
+
+            bombs.push({ startX: boss.x, startY: boss.y - 50, endX: tx, endY: ty, timer: 0, duration: 40, state: 'fly' });
+        }
+
+        function updateBombs() {
+            bombs.forEach(b => {
+                b.timer++;
+                if (b.state === 'fly') {
+                    if (b.timer >= b.duration) { b.state = 'explode_wait'; b.timer = 0; }
+                } else if (b.state === 'explode_wait') {
+                    if (b.timer > 12) { 
+                        b.state = 'explosion'; b.timer = 0; screenShake = 10; 
+                        spawnParticles(b.endX, b.endY, '#ffaa00', 8); playSound(audios.explode, 0.7); 
+                    }
+                } else if (b.state === 'explosion') {
+                    if (b.timer === 2 && Math.hypot(b.endX - player.x, b.endY - player.y) < 75) damagePlayer(25); 
+                    if (b.timer > 10) b.dead = true;
+                }
+            });
+            bombs = bombs.filter(b => !b.dead);
+        }
+
+        function updateBoss() {
+            boss.timer++; boss.actionTimer++;
+            const isPhase2 = boss.hp <= 75; 
+
+            if (boss.state === 'intro') {
+                let step = Math.floor(boss.timer / 4) % 2; 
+                boss.scaleY = (step === 0) ? 1.15 : 0.9; 
+                boss.yOffset = (step === 0) ? -10 : 5;   
+                if (boss.timer > 100) { 
+                    boss.scaleY = 1.0; boss.yOffset = 0; 
+                    boss.state = 'move'; gameState = 'play'; boss.actionTimer = 0;
+                    audios.bgm.currentTime = 0;
+                    audios.bgm.play().catch(()=>{});
+                }
+            } 
+            else if (boss.state === 'move') {
+                let animCycle = Math.floor(boss.timer / 8) % 4; 
+                boss.skewX = (animCycle === 0) ? 0.15 : (animCycle === 2) ? -0.15 : 0;                         
+                boss.yOffset = (animCycle === 1 || animCycle === 3) ? -5 : 0;
+
+                if (boss.timer % 3 === 0) {
+                    let dx = boss.targetX - boss.x;
+                    let dy = boss.targetY - boss.y;
+                    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+                        do {
+                            boss.targetX = 80 + Math.random() * (canvas.width - 160);
+                            boss.targetY = 80 + Math.random() * 200;
+                        } while(checkCollisionWithWalls(boss.targetX, boss.targetY, 'boss'));
+                    }
+                    boss.x += dx * 0.05; boss.y += dy * 0.05;
+                }
+
+                let limit = isPhase2 ? 60 : 90;
+                if (boss.actionTimer > limit) {
+                    if (Math.random() < 0.45) { boss.state = 'throw_bomb'; boss.timer = 0; playSound(audios.throw, 0.8); } 
+                    else { boss.state = 'charge'; boss.timer = 0; playSound(audios.dashPrep, 0.8); }
+                }
+            }
+            else if (boss.state === 'throw_bomb') {
+                boss.scaleY = 1.2;
+                if (boss.timer === 10) { spawnBomb(); if (isPhase2) spawnBomb(); if (boss.hp <= 30) spawnBomb(); }
+                if (boss.timer > 20) { boss.state = 'move'; boss.scaleY = 1.0; boss.actionTimer = 0; }
+            }
+            else if (boss.state === 'charge') {
+                boss.skewX = (Math.floor(boss.timer / 2) % 2 === 0) ? 0.08 : -0.08;
+                if (boss.timer === 1) {
+                    let dx = player.x - boss.x; let dy = player.y - boss.y;
+                    let dist = Math.hypot(dx, dy) || 1;
+                    let spd = isPhase2 ? 20 : 15; 
+                    boss.dashVx = (dx / dist) * spd; boss.dashVy = (dy / dist) * spd;
+                }
+                let chargeTime = isPhase2 ? 15 : 25; 
+                if (boss.timer > chargeTime) { boss.state = 'dash'; boss.timer = 0; playSound(isPhase2 ? audios.dashFast : audios.dash, 0.8); }
+            }
+            else if (boss.state === 'dash') {
+                boss.skewX = (boss.dashVx > 0) ? 0.4 : -0.4;
+                
+                let nextBx = boss.x + boss.dashVx;
+                let nextBy = boss.y + boss.dashVy;
+                
+                if (nextBx < 20 || nextBx > canvas.width - 20 || nextBy < 20 || nextBy > canvas.height - 20 || boss.timer > 15) {
+                    boss.x = Math.max(20, Math.min(canvas.width - 20, boss.x));
+                    boss.y = Math.max(20, Math.min(canvas.height - 20, boss.y));
+                    boss.state = 'move'; boss.actionTimer = 0; boss.skewX = 0; 
+                    
+                    screenShake = 12; 
+                    playSound(audios.explode, 0.4); 
+                } else {
+                    boss.x = nextBx; boss.y = nextBy;
+                }
+                
+                if (Math.hypot(boss.x - player.x, boss.y - player.y) < 50) damagePlayer(30);
+            }
+            else if (boss.state === 'steal_prep') {
+                boss.skewX = (Math.floor(globalFrame / 2) % 2 === 0) ? 0.2 : -0.2; 
+                boss.yOffset = -Math.sin(boss.timer * 0.4) * 10;
+                if (boss.timer === 1) playSound(audios.dashPrep, 1.0);
+                
+                if (boss.timer > 40) {
+                    boss.state = 'steal_dash'; boss.timer = 0;
+                    let tx = hpBar.x + 75; let ty = hpBar.y + 10;
+                    let dist = Math.hypot(tx - boss.x, ty - boss.y) || 1;
+                    boss.dashVx = ((tx - boss.x) / dist) * 28; 
+                    boss.dashVy = ((ty - boss.y) / dist) * 28;
+                    playSound(audios.dashFast, 1.0);
+                }
+            }
+            else if (boss.state === 'steal_dash') {
+                boss.x += boss.dashVx; boss.y += boss.dashVy;
+                boss.skewX = 0.6;
+                
+                if (Math.hypot(boss.x - (hpBar.x + 75), boss.y - (hpBar.y + 10)) < 30) {
+                    boss.x = hpBar.x + 75; boss.y = hpBar.y + 10;
+                    boss.state = 'steal_shatter'; boss.timer = 0;
+                    boss.dashVx = 0; boss.dashVy = 0;
+                    triggerDomShake(300); 
+                    screenShake = 30;
+                    playSound(audios.explode, 1.0);
+                    
+                    hpBar.visible = false; 
+                    spawnParticles(boss.x, boss.y, '#ffffff', 30);
+
+                    for(let i=0; i<30; i++) {
+                        hpShards.push({
+                            x: hpBar.x + Math.random() * 150,
+                            y: hpBar.y + Math.random() * 20,
+                            vx: (Math.random() - 0.5) * 15,
+                            vy: (Math.random() - 0.5) * 15 + 5,
+                            w: 10 + Math.random() * 30,
+                            h: 4 + Math.random() * 8,
+                            color: Math.random() > 0.3 ? '#ff5555' : '#fff',
+                            state: 'scatter'
+                        });
+                    }
+                }
+            }
+            else if (boss.state === 'steal_shatter') {
+                boss.skewX = 0;
+                boss.x += (320 - boss.x) * 0.1;
+                boss.y += (120 - boss.y) * 0.1;
+                if (boss.timer > 50) {
+                    boss.state = 'steal_gather'; boss.timer = 0;
+                    hpShards.forEach(s => s.state = 'gather');
+                }
+            }
+            else if (boss.state === 'steal_gather') {
+                boss.yOffset = Math.sin(globalFrame * 0.2) * 5;
+                let allGathered = true;
+                
+                hpShards.forEach(s => {
+                    if (s.state === 'gather') {
+                        allGathered = false;
+                        s.x += (boss.x - s.x) * 0.15;
+                        s.y += (boss.y - s.y) * 0.15;
+                        if (Math.hypot(boss.x - s.x, boss.y - s.y) < 25) {
+                            s.state = 'held';
+                        }
+                    } else if (s.state === 'held') {
+                        s.x = boss.x + (Math.random() - 0.5) * 50;
+                        s.y = boss.y + (Math.random() - 0.5) * 50;
+                    }
+                });
+
+                if (allGathered || boss.timer > 70) {
+                    boss.state = 'steal_throw'; boss.timer = 0; boss.actionTimer = 0;
+                }
+            }
+            else if (boss.state === 'steal_throw') {
+                boss.x = 320 + Math.sin(boss.timer * 0.2) * 50; 
+                boss.yOffset = Math.sin(boss.timer * 0.5) * 5;
+                
+                hpShards.forEach(s => {
+                    if (s.state === 'held') {
+                        s.x = boss.x + (Math.random() - 0.5) * 50;
+                        s.y = boss.y + (Math.random() - 0.5) * 50;
+                    }
+                });
+
+                if (boss.timer % 6 === 0) {
+                    let heldShards = hpShards.filter(s => s.state === 'held');
+                    if (heldShards.length > 0) {
+                        let s = heldShards[Math.floor(Math.random() * heldShards.length)];
+                        s.state = 'thrown';
+                        playSound(audios.throw, 0.7);
+                        let angle = Math.atan2(player.y - boss.y, player.x - boss.x);
+                        angle += (Math.random() - 0.5) * 0.5;
+                        let speed = 4 + Math.random() * 2;
+                        s.vx = Math.cos(angle) * speed;
+                        s.vy = Math.sin(angle) * speed;
+                    }
+                }
+                
+                let remaining = hpShards.filter(s => s.state !== 'dead');
+                if (remaining.length === 0 || boss.timer > 300) {
+                    boss.state = 'move'; boss.timer = 0; boss.actionTimer = 0;
+                    boss.invincible = false;
+                    boss.yOffset = 0;
+                    hpShards = [];
+                }
+            } 
+            else if (boss.state === 'hurt') {
+                let glitchStep = Math.floor(boss.timer / 2) % 2; 
+                boss.skewX = (glitchStep === 0) ? 0.3 : -0.3; boss.scaleY = 0.9; boss.yOffset = 0;
+                
+                if (boss.timer > 15) { 
+                    boss.state = 'retreat'; boss.timer = 0; boss.scaleY = 1.0; boss.skewX = 0; 
+                    let dx = boss.x - player.x; let dy = boss.y - player.y; let dist = Math.hypot(dx, dy) || 1;
+                    boss.targetX = Math.max(40, Math.min(canvas.width-40, boss.x + (dx/dist) * 200));
+                    boss.targetY = Math.max(40, Math.min(canvas.height-100, boss.y + (dy/dist) * 200));
+                }
+            }
+            else if (boss.state === 'retreat') {
+                boss.x += (boss.targetX - boss.x) * 0.2; boss.y += (boss.targetY - boss.y) * 0.2;
+                boss.skewX = (globalFrame % 2 === 0) ? 0.1 : -0.1; 
+                if (boss.timer > 12) { boss.state = 'move'; boss.skewX = 0; boss.invincible = false; boss.actionTimer = 50; }
+            }
+        }
+
+        function updatePlayer() {
+            if (player.state === 'attack') {
+                player.timer++;
+                if (player.frame === 1) checkHitBoss();
+                if (player.timer >= 5) {
+                    player.frame++; player.timer = 0;
+                    if (player.frame > 2) { player.state = 'idle'; player.frame = 0; }
+                }
+            } else if (gameState !== 'item_got') { 
+                let dx = 0, dy = 0;
+                if (keys.ArrowUp) { dy = -player.speed; player.dir = 'up'; }
+                if (keys.ArrowDown) { dy = player.speed; player.dir = 'down'; }
+                if (keys.ArrowLeft) { dx = -player.speed; player.dir = 'left'; }
+                if (keys.ArrowRight) { dx = player.speed; player.dir = 'right'; }
+                
+                if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
+
+                let nextX = player.x + dx;
+                let nextY = player.y + dy;
+
+                if (!checkCollisionWithWalls(nextX, player.y, 'player')) {
+                    player.x = Math.max(20, Math.min(canvas.width-20, nextX));
+                }
+                if (!checkCollisionWithWalls(player.x, nextY, 'player')) {
+                    player.y = Math.max(40, Math.min(canvas.height-20, nextY));
+                }
+
+                if (dx !== 0 || dy !== 0) {
+                    player.state = 'walk'; player.timer++;
+                    if (player.timer >= 12) { player.frame = player.frame === 0 ? 1 : 0; player.timer = 0; }
+                } else { 
+                    player.state = 'idle'; player.frame = 0; player.timer = 0; 
+                }
+            }
+        }
+
+        function update() {
+            globalFrame++;
+            if (player.invincibility > 0) player.invincibility--;
+            if (screenShake > 0) screenShake *= 0.8; 
+            if (screenShake < 0.5) screenShake = 0;
+
+            particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life--; });
+            particles = particles.filter(p => p.life > 0);
+
+            hpShards.forEach(s => {
+                if (s.state === 'scatter') {
+                    s.x += s.vx; s.y += s.vy;
+                    s.vx *= 0.85; s.vy *= 0.85;
+                } else if (s.state === 'thrown') {
+                    s.x += s.vx; s.y += s.vy;
+                    if (Math.hypot(s.x - player.x, s.y - player.y) < 15) {
+                        damagePlayer(15); s.state = 'dead';
+                    }
+                    if (s.x < -50 || s.x > canvas.width + 50 || s.y < -50 || s.y > canvas.height + 50) {
+                        s.state = 'dead';
+                    }
+                }
+            });
+            hpShards = hpShards.filter(s => s.state !== 'dead');
+
+            if (gameState === 'play') {
+                if (!healItem.active) {
+                    healItem.timer++;
+                    if (healItem.timer > 600) { 
+                        let hx, hy;
+                        do {
+                            hx = 60 + Math.random() * 520;
+                            hy = 60 + Math.random() * 360;
+                        } while(checkCollisionWithWalls(hx, hy, 'player'));
+                        healItem.x = hx; healItem.y = hy;
+                        healItem.active = true; healItem.timer = 0;
+                    }
+                } else {
+                    if (Math.hypot(player.x - healItem.x, player.y - healItem.y) < 40) {
+                        healItem.active = false;
+                        player.hp = Math.min(player.maxHp, player.hp + 30);
+                        playSound(audios.gain, 1.0);
+                        spawnParticles(healItem.x, healItem.y, '#0f0', 20); 
+                    }
+                }
+            }
+
+            updateBombs();
+
+            if (boss.state !== 'hidden' && boss.hp > 0 && (gameState === 'play' || gameState === 'boss_intro')) { updateBoss(); }
+
+            if (gameState === 'boss_fly') {
+                boss.timer++; boss.y -= boss.timer * 0.8; boss.skewX = (globalFrame % 2 === 0) ? 0.1 : -0.1;
+                if (boss.y < -100) { gameState = 'item_wait'; item.x = boss.x; item.y = 150; item.active = true; }
+            }
+
+            if (gameState === 'play' || gameState === 'item_wait' || gameState === 'item_got') { updatePlayer(); }
+        }
+
+        function drawMap() {
+            const tileSize = 40;
+            ctx.strokeStyle = '#1e1e28'; ctx.lineWidth = 2;
+            for (let x = 0; x <= canvas.width; x += tileSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+            for (let y = 0; y <= canvas.height; y += tileSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+            
+            for (let obs of obstacles) {
+                ctx.fillStyle = '#1e1e28'; ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                ctx.strokeStyle = '#334'; ctx.lineWidth = 2; ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+                ctx.fillStyle = '#14141c';
+                ctx.fillRect(obs.x + 8, obs.y + 8, obs.w - 16, Math.floor(obs.h / 2) - 4);
+            }
+
+            let hpRatio = Math.max(0, boss.hp / boss.maxHp);
+            let r = Math.floor(51 + (255 - 51) * (1 - hpRatio)); 
+            let g = Math.floor(51 - 51 * (1 - hpRatio)); 
+            let b = Math.floor(68 - 68 * (1 - hpRatio)); 
+            
+            ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
+            ctx.lineWidth = 4 + (1 - hpRatio) * 6; 
+            
+            if (hpRatio < 0.5) { 
+                ctx.globalAlpha = 0.7 + 0.3 * Math.sin(globalFrame * 0.15);
+            }
+            ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+            ctx.globalAlpha = 1.0; 
+        }
+
+        function drawHPBar() {
+            if (gameState === 'start' || gameState.startsWith('dialogue')) return;
+            if (gameState === 'gameover' || gameState === 'boss_fly' || gameState.startsWith('item')) return;
+            
+            ctx.save();
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 20px GalmuriMono7, monospace';
+            ctx.fillText('HP', hpBar.x - 35, hpBar.y + 16);
+            
+            if (hpBar.visible) {
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(hpBar.x, hpBar.y, 150, 20);
+                let hpRatio = Math.max(0, player.hp / player.maxHp);
+                ctx.fillStyle = (player.invincibility > 0 && Math.floor(globalFrame/4)%2 === 0) ? '#ff5555' : '#fff';
+                ctx.fillRect(hpBar.x, hpBar.y, 150 * hpRatio, 20);
+            }
+            ctx.restore();
+        }
+
+        function drawItem(x, y) {
+            let floatY = Math.sin(globalFrame * 0.1) * 5; 
+            ctx.save(); ctx.translate(x, y + floatY);
+            ctx.fillStyle = '#fff'; ctx.fillRect(-12, -15, 24, 30);
+            ctx.fillStyle = '#000'; ctx.fillRect(4, -15, 8, 8);
+            ctx.fillStyle = '#aaa'; ctx.fillRect(4, -7, 8, -8);
+            ctx.fillStyle = '#ccc'; ctx.fillRect(-6, -2, 12, 2); ctx.fillRect(-6, 4, 12, 2); ctx.fillRect(-6, 10, 12, 2);
+            ctx.restore();
+        }
+
+        function draw() {
+            ctx.fillStyle = '#14141c'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.save(); 
+            
+            if (screenShake > 0) {
+                let sx = (Math.random() - 0.5) * screenShake; let sy = (Math.random() - 0.5) * screenShake;
+                ctx.translate(sx, sy);
+            }
+
+            ctx.filter = 'drop-shadow(1px 0px 0px rgba(255, 0, 0, 0.2)) drop-shadow(-1px 0px 0px rgba(0, 255, 255, 0.2))';
+            drawMap();
+
+            const baseFilter = 'drop-shadow(3px 0px 0px rgba(255, 0, 0, 0.4)) drop-shadow(-3px 0px 0px rgba(0, 255, 255, 0.4))';
+            ctx.filter = baseFilter;
+
+            if (healItem.active && sprites.dinner.complete) {
+                ctx.save();
+                if (Math.floor(globalFrame / 8) % 2 === 0) ctx.globalAlpha = 0.5; 
+                let floatY = Math.sin(globalFrame * 0.15) * 5; 
+                ctx.translate(healItem.x, healItem.y + floatY);
+                ctx.drawImage(sprites.dinner, -20, -20, 40, 40);
+                ctx.restore();
+            }
+
+            if ((boss.state === 'charge' || boss.state === 'steal_prep') && boss.dashVx !== 0) {
+                let mag = Math.hypot(boss.dashVx, boss.dashVy);
+                let nx = boss.dashVy / mag; let ny = -boss.dashVx / mag; 
+                let hw = 45; let len = 1000; 
+                
+                ctx.fillStyle = (Math.floor(globalFrame / 4) % 2 === 0) ? 'rgba(255, 0, 0, 0.4)' : 'rgba(255, 50, 50, 0.1)';
+                ctx.beginPath();
+                ctx.moveTo(boss.x + nx * hw, boss.y + ny * hw);
+                ctx.lineTo(boss.x + nx * hw + boss.dashVx * len, boss.y + ny * hw + boss.dashVy * len);
+                ctx.lineTo(boss.x - nx * hw + boss.dashVx * len, boss.y - ny * hw + boss.dashVy * len);
+                ctx.lineTo(boss.x - nx * hw, boss.y - ny * hw);
+                ctx.fill();
+            }
+
+            bombs.forEach(b => {
+                ctx.save();
+                if (b.state === 'fly') {
+                    let prog = b.timer / b.duration;
+                    let curX = b.startX + (b.endX - b.startX) * prog; let curY = b.startY + (b.endY - b.startY) * prog;
+                    let arcY = Math.sin(prog * Math.PI) * 40; 
+                    
+                    if (sprites.bomb.complete) {
+                        let scale = 0.25; let bw = sprites.bomb.width * scale, bh = sprites.bomb.height * scale;
+                        ctx.translate(curX, curY - arcY); ctx.rotate(prog * Math.PI * 4);
+                        ctx.drawImage(sprites.bomb, -bw/2, -bh/2, bw, bh);
+                    }
+                } else if (b.state === 'explode_wait') {
+                    if (Math.floor(globalFrame / 2) % 2 === 0) {
+                        let scale = 0.25; let bw = sprites.bomb.width * scale, bh = sprites.bomb.height * scale;
+                        ctx.filter = baseFilter + ' sepia(1) hue-rotate(-50deg) saturate(5) drop-shadow(0 0 10px red)';
+                        ctx.drawImage(sprites.bomb, b.endX - bw/2, b.endY - bh/2, bw, bh);
+                    }
+                } else if (b.state === 'explosion') {
+                    ctx.beginPath(); ctx.arc(b.endX, b.endY, b.timer * 7, 0, Math.PI * 2);
+                    ctx.fillStyle = (Math.floor(globalFrame / 2) % 2 === 0) ? '#ffffff' : '#ff4400'; 
+                    ctx.fill();
+                }
+                ctx.restore();
+            });
+
+            if ((boss.state === 'dash' || boss.state === 'steal_dash') && sprites.boss.complete) {
+                const bw = sprites.boss.width * boss.baseScale, bh = sprites.boss.height * boss.baseScale;
+                ctx.save(); ctx.globalAlpha = 0.4;
+                ctx.translate(Math.round(boss.x - boss.dashVx * 1.5), Math.round(boss.y - boss.dashVy * 1.5 - bh/2)); 
+                ctx.transform(1, 0, boss.skewX, 1, 0, 0); ctx.drawImage(sprites.boss, -bw/2, 0, bw, bh); ctx.restore();
+            }
+
+            if (sprites.boss.complete && boss.state !== 'hidden' && !gameState.startsWith('item')) {
+                const bw = sprites.boss.width * boss.baseScale, bh = sprites.boss.height * boss.baseScale;
+                ctx.save();
+                
+                if (boss.state === 'hurt' && boss.timer < 5) { ctx.filter = baseFilter + ' brightness(2)'; }
+
+                const useBottomPivot = (boss.state === 'intro' || boss.state === 'hurt' || boss.state === 'dead_stand');
+                const pivotY = useBottomPivot ? bh : 0;
+                ctx.translate(Math.round(boss.x), Math.round(boss.y - bh/2 + boss.yOffset + pivotY)); 
+                
+                if (boss.state === 'retreat') ctx.globalAlpha = 0.6;
+                
+                ctx.scale(1, boss.scaleY); ctx.transform(1, 0, boss.skewX, 1, 0, 0); 
+                ctx.drawImage(sprites.boss, -bw/2, -pivotY, bw, bh);
+                ctx.restore(); 
+            }
+
+            if (item.active) drawItem(item.x, item.y);
+
+            if (gameState !== 'gameover' && (player.invincibility === 0 || Math.floor(globalFrame / 4) % 2 === 0)) {
+                const pAnim = player.state === 'attack' ? 'strike' : 'walk';
+                const curImg = sprites.kris[pAnim][player.dir][player.frame];
+                const idleImg = sprites.kris.walk[player.dir][0];
+
+                if (curImg?.complete && idleImg?.complete) {
+                    const w = curImg.width * 2.5, h = curImg.height * 2.5;
+                    const iw = idleImg.width * 2.5, ih = idleImg.height * 2.5;
+                    let px, py;
+
+                    if (player.state === 'attack') {
+                        if (player.dir === 'left') { px = player.x + iw/2 - w; py = player.y - ih; }
+                        else if (player.dir === 'right') { px = player.x - iw/2; py = player.y - ih; } 
+                        else if (player.dir === 'up') { px = player.x - iw/2; py = player.y - h; }
+                        else { px = player.x - iw/2; py = player.y - ih; }
+                    } else { px = player.x - w/2; py = player.y - h; }
+
+                    ctx.drawImage(curImg, Math.round(px), Math.round(py), w, h);
+                }
+            }
+            
+            hpShards.forEach(s => {
+                ctx.save();
+                ctx.translate(s.x, s.y);
+                if (s.state === 'scatter' || s.state === 'thrown') {
+                    ctx.rotate(Math.atan2(s.vy, s.vx)); 
+                } else if (s.state === 'held') {
+                    ctx.rotate(globalFrame * 0.1);
+                }
+                ctx.fillStyle = s.color;
+                ctx.fillRect(-s.w/2, -s.h/2, s.w, s.h);
+                if (Math.random() < 0.1) {
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(-s.w/2, -s.h/2, s.w/2, s.h);
+                }
+                ctx.restore();
+            });
+
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life / p.maxLife; ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 6, 6);
+            });
+            ctx.globalAlpha = 1;
+
+            drawHPBar();
+
+            if (gameState === 'gameover') {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ff0000'; ctx.font = '40px GalmuriMono7, monospace'; ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2 - 20);
+                
+                ctx.fillStyle = '#fff'; ctx.font = '20px GalmuriMono7, monospace';
+                if (Math.floor(globalFrame / 20) % 2 === 0) { ctx.fillText('[Z키를 눌러 재도전]', canvas.width/2, canvas.height/2 + 30); }
+                ctx.textAlign = 'left'; 
+            }
+            
+            ctx.restore(); 
+        }
+
+        function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+        gameLoop();
+    </script>
+</body>
+</html>
